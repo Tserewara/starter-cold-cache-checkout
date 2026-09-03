@@ -1,0 +1,38 @@
+name: bgym-cold-cache-checkout
+
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    environment:
+      POSTGRES_DB: prices
+      POSTGRES_USER: prices
+      POSTGRES_PASSWORD: prices
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prices -d prices"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+  redis:
+    image: redis:7.4.1-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      DATABASE_URL: postgresql://prices:prices@postgres:5432/prices
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "58000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "8000"]

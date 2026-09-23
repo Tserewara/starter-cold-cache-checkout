@@ -8,7 +8,7 @@ You need Docker with Compose. `make up` starts the API, Redis and Postgres, and 
 
 ## Break it
 
-`make burst` resets the counters, expires the hot key `sku-1` and sends 40 concurrent requests for it. It prints one line:
+`make burst` resets the counters, expires the hot key `sku-1` and releases 40 requests for it at the same moment. While a burst runs, a Postgres read gets slower the more reads are in flight at once, the way a busy primary does under a herd; one read on its own stays fast. It prints one line:
 
 ```
 {"requests": 40, "store_reads": N, "p99_ms": N}

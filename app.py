@@ -21,7 +21,10 @@ state = {
     "store_reads": 0,
     "durations_ms": [],
 }
-stampede_barrier = threading.Barrier(40)
+# During `make burst` a store read costs more the more reads are in flight at
+# once, the way a busy primary slows down under a herd. One read stays cheap.
+STORE_READ_COST_S = 0.025
+store_reads_in_flight = 0
 stampede_enabled = False
 
 
@@ -80,7 +83,7 @@ def control(payload: Control):
 
 @app.post("/_reset")
 def reset():
-    global stampede_barrier, stampede_enabled
+    global stampede_enabled
     with state_lock:
         state["cache_hits"] = 0
         state["cache_misses"] = 0
@@ -89,9 +92,25 @@ def reset():
         state["redis_down"] = False
         state["store_down"] = False
         stampede_enabled = False
-        stampede_barrier = threading.Barrier(40)
     cache.delete("price:sku-1")
     return {"ok": True}
+
+
+def read_store(sku: str, contended: bool):
+    global store_reads_in_flight
+    with state_lock:
+        store_reads_in_flight += 1
+        in_flight = store_reads_in_flight
+    try:
+        if contended:
+            time.sleep(STORE_READ_COST_S * in_flight)
+        with db_connect() as conn:
+            row = conn.execute("SELECT amount_cents FROM prices WHERE sku = %s", (sku,)).fetchone()
+    finally:
+        with state_lock:
+            store_reads_in_flight -= 1
+            state["store_reads"] += 1
+    return row
 
 
 @app.get("/price/{sku}")
@@ -113,18 +132,10 @@ def price(sku: str):
         with state_lock:
             state["cache_misses"] += 1
             store_down = state["store_down"]
-            use_stampede_barrier = stampede_enabled
-        if use_stampede_barrier:
-            try:
-                stampede_barrier.wait(timeout=10)
-            except threading.BrokenBarrierError:
-                pass
+            contended = stampede_enabled
         if store_down:
             raise HTTPException(status_code=503, detail="price temporarily unavailable")
-        with db_connect() as conn:
-            row = conn.execute("SELECT amount_cents FROM prices WHERE sku = %s", (sku,)).fetchone()
-        with state_lock:
-            state["store_reads"] += 1
+        row = read_store(sku, contended=contended)
         if row is None:
             raise HTTPException(status_code=404, detail="sku not found")
         result = {"sku": sku, "amount_cents": row[0], "source": "store"}

@@ -1,16 +1,29 @@
 # Mira price service
 
-Mira compares prices for shoppers. The service exposes a small price lookup and local controls for repeatable experiments.
+Mira compares prices for shoppers. This is its price lookup, plus a few local controls so you can break it the same way twice.
 
 ## Run
 
-You need Docker with Compose. Run `make up`, then `make test`. The API is at `http://localhost:58000`.
+You need Docker with Compose. `make up` starts the API, Redis and Postgres, and `make test` runs the checks. The API listens on `http://localhost:58000`. `make down` removes the containers and the database volume.
 
-`make burst` sends 40 concurrent requests after the cache has been cleared by `POST /_control` with `{"expire": true}`. The API's `/metrics` endpoint reports cache hits, misses, store reads, request count, and p99 latency.
+## Break it
 
-The local stack contains the API, Redis, and Postgres. The control endpoint can expire the hot key and simulate either dependency being unavailable. `make down` removes the local containers and database volume.
+`make burst` resets the counters, expires the hot key `sku-1` and sends 40 concurrent requests for it. It prints one line:
+
+```
+{"requests": 40, "store_reads": N, "p99_ms": N}
+```
+
+`make metrics` shows the running counters: cache hits, misses, store reads, request count and p99 latency. `POST /_reset` zeroes them and drops the hot key.
+
+`POST /_control` takes any of these:
+
+- `{"expire": true}` drops the cached `sku-1`
+- `{"redis_down": true}` makes the API behave as if Redis were gone
+- `{"store_down": true}` does the same for Postgres
+
+Send `false` to bring a dependency back.
 
 ## License
 
 MIT. See `LICENSE`.
-

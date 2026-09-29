@@ -1,0 +1,54 @@
+# The world around the price service. Only HTTP crosses into service/; the
+# harness talks to Redis and Postgres as a client, never to the service's code.
+name: bgym-cold-cache-checkout
+
+services:
+  service:
+    build: ../service
+    environment:
+      DATABASE_URL: postgresql://prices:prices@postgres:5432/prices
+      REDIS_URL: redis://redis:6379/0
+    ports:
+      - "58000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16.4-alpine
+    environment:
+      POSTGRES_DB: prices
+      POSTGRES_USER: prices
+      POSTGRES_PASSWORD: prices
+    volumes:
+      - ./postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prices -d prices"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+  redis:
+    image: redis:7.4.1-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+
+  tools:
+    build: {context: ., dockerfile: tools.Dockerfile}
+    profiles: ["tools"]
+    environment:
+      SERVICE_URL: http://service:8000
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_URL: postgresql://prices:prices@postgres:5432/prices
+
+  contract:
+    build: ../contract
+    profiles: ["tools"]
+    environment:
+      SERVICE_URL: http://service:8000
+      REDIS_URL: redis://redis:6379/0

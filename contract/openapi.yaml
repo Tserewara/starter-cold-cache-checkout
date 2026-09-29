@@ -1,0 +1,30 @@
+openapi: 3.0.3
+info:
+  title: Mira price service
+  version: 1.0.0
+  description: >
+    The price service as the starter ships it. A port listens on port 8000
+    inside its container, reads DATABASE_URL and REDIS_URL, and reads prices
+    from the `prices` view (sku, amount_cents).
+paths:
+  /health:
+    get:
+      responses:
+        "200": {description: The service is up.}
+  /price/{sku}:
+    get:
+      parameters:
+        - {name: sku, in: path, required: true, schema: {type: string}}
+      responses:
+        "200":
+          description: The current price, and where it came from.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sku, amount_cents, source]
+                properties:
+                  sku: {type: string}
+                  amount_cents: {type: integer}
+                  source: {type: string, description: "cache or store"}
+        "404": {description: No such SKU.}

@@ -2,7 +2,8 @@
 
 Mira compares prices for shoppers. Checkout asks this service for the price of
 every item in the basket: `GET /price/{sku}` answers from Redis when it can
-and from Postgres when it can't, then fills Redis for 30 seconds.
+and from Postgres when it can't, then fills Redis for 30 seconds. Every
+answer carries `source`: `cache` or `store`.
 
 ```
 service/    the price service: Python and FastAPI
@@ -34,11 +35,9 @@ and the database.
 - `make redis-down` and `make redis-up` stop and start Redis for real.
   `make store-down` and `make store-up` do the same for Postgres.
 
-The Postgres here is small, so the harness makes it behave like Thursday's:
-every read of `prices` costs 25 ms times the number of reads of it running at
-that moment, the way a busy primary slows down under a herd. One read on its
-own stays cheap. That lives in the database (`harness/postgres/init.sql`),
-not in the service.
+The Postgres here is small, so the harness makes it behave like a busier
+primary: reads of `prices` get slower as more of them run at once. That lives
+in the database (`harness/postgres/init.sql`), outside the service.
 
 ## Porting the service
 
@@ -47,6 +46,8 @@ listens on port 8000 inside its container (published as 58000), reads
 `DATABASE_URL` and `REDIS_URL`, reads prices from the `prices` view
 (`sku`, `amount_cents`), and answers the routes in `contract/openapi.yaml`.
 Build it from `service/Dockerfile`, then run `make contract` until it passes.
+The contract covers the normal path only: extra fields in an answer, and
+whatever you answer during an outage, are yours to decide.
 
 ## License
 
